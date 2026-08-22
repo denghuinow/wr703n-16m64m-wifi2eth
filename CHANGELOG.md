@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.1] - 2026-08-22
+## [1.1.1] - 2026-08-23
 
 ### Bug Fixes
 - Setup 模式：`network restart` 后重新加载无线，使 AP 重新加入 `br-lan`，修复连 `WR703N-Setup` 拿不到 IP（有线正常）的问题。
