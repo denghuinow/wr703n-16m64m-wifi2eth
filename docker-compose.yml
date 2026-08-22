@@ -1,0 +1,19 @@
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wr703n-wifi2eth-builder:latest
+    working_dir: /work
+    volumes:
+      - .:/work
+      - ccache:/work/.ccache
+    environment:
+      JOBS: ${JOBS:-8}
+      FORCE_UNSAFE_CONFIGURE: "1"
+      CCACHE_DIR: /work/.ccache
+      CCACHE_MAXSIZE: ${CCACHE_MAXSIZE:-10G}
+    command: ["./scripts/openwrt-build.sh", "quick"]
+
+volumes:
+  ccache:

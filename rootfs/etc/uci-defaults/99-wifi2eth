@@ -2,7 +2,7 @@
 uci -q set system.@system[0].hostname='wr703n-wifi2eth'
 uci -q set wifi2eth.main='main'
 uci -q set wifi2eth.main.mode='setup'
-uci -q set wifi2eth.main.version='16m64m-v1.1'
+uci -q set wifi2eth.main.version='16m64m-v1.1.1'
 uci commit system
 uci commit wifi2eth
 

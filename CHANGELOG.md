@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.1] - 2026-08-22
+
+### Bug Fixes
+- Setup 模式：`network restart` 后重新加载无线，使 AP 重新加入 `br-lan`，修复连 `WR703N-Setup` 拿不到 IP（有线正常）的问题。
+- 首次 `board.json` 生成：`tplink,tl-wr703n-16m64m` 与 WR703N 一样仅使用 `eth0` 作 LAN。
+- 扫描列表：`iwinfo` 的 `WPA PSK (CCMP)` 误判为「仅 WPA1」导致灰显不可点选；现按 CCMP/AES 识别为可连接的 WPA2。
+
+### Changed
+- 新增 Docker 容器编译（`./build.sh docker build|quick`）与 `quick` 增量编译，避免每次全量重编 OpenWrt。
+
 ## [1.1.0] - 2026-08-22
 
 ### Security

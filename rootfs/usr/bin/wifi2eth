@@ -234,9 +234,22 @@ commit_all() {
   uci commit wifi2eth 2>/dev/null || true
 }
 
+reload_wireless() {
+  # network restart recreates br-lan; hostapd must reconf or the AP stays off-L2
+  # and Wi-Fi clients never receive DHCP (wired eth0 in br-lan still works).
+  if ubus call network.wireless reconf >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -x /sbin/wifi ]; then
+    wifi reconf 2>/dev/null || wifi reload 2>/dev/null || wifi up 2>/dev/null || true
+  fi
+}
+
 restart_all() {
   [ "${WIFI2ETH_NO_RESTART:-0}" = "1" ] && return 0
   /etc/init.d/network restart
+  sleep 1
+  reload_wireless
   sleep 2
   /etc/init.d/dnsmasq restart 2>/dev/null || true
   /etc/init.d/firewall restart 2>/dev/null || true

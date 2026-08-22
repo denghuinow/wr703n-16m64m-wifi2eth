@@ -74,6 +74,14 @@ for p, needles in checks.items():
         if needle not in text:
             raise SystemExit(f"validation failed: {needle} not found in {p}")
 
+board_net = root / "target/linux/ath79/tiny/base-files/etc/board.d/02_network"
+if board_net.exists():
+    s = board_net.read_text()
+    needle = "\ttplink,tl-wr703n|\\"
+    insert = "\ttplink,tl-wr703n-16m64m|\\"
+    if insert not in s and needle in s:
+        board_net.write_text(s.replace(needle, insert + needle, 1))
+
 print("Prepared custom device: tplink_tl-wr703n-16m64m")
 print("  firmware: 0x020000 + 0xfd0000")
 print("  ART:      0xff0000 + 0x010000")

@@ -23,13 +23,17 @@ printf '<div class="wifi-list">\n'
 while IFS="$(printf '\037')" read -r SIGNAL QUALITY ENC SSID; do
   [ -n "$SSID" ] || continue
   COMPAT=1; CLASS='sec-ok'; NOTE="$ENC"; SECURITY='psk2'
+  # iwinfo often prints "WPA PSK (CCMP)" for WPA2 (no literal "WPA2").
+  # Only reject clear WEP / TKIP-only WPA1.
   case "$ENC" in
     *WEP*) COMPAT=0; CLASS='sec-bad'; NOTE="$ENC · WEP 不支持" ;;
     *WPA3*WPA2*|*WPA2*WPA3*|*SAE*WPA2*|*WPA2*SAE*) SECURITY='sae-mixed' ;;
     *WPA3*|*SAE*) SECURITY='sae' ;;
     *none*|*None*|*NONE*|*open*|*Open*) SECURITY='none'; CLASS='sec-open'; NOTE='开放网络' ;;
-    *WPA2*) SECURITY='psk2' ;;
-    *WPA*) COMPAT=0; CLASS='sec-bad'; NOTE="$ENC · 仅 WPA1 不支持" ;;
+    *WPA2*|*802.11i*) SECURITY='psk2' ;;
+    *WPA*CCMP*|*WPA*AES*) SECURITY='psk2' ;;
+    *WPA*TKIP*) COMPAT=0; CLASS='sec-bad'; NOTE="$ENC · 仅 WPA1/TKIP 不支持" ;;
+    *WPA*) SECURITY='psk2' ;;
   esac
   case "$SIGNAL" in -[0-4][0-9]|-[0-5][0-9]) BARS='▮▮▮▮';; -6[0-7]) BARS='▮▮▮';; -6[8-9]|-7[0-5]) BARS='▮▮';; *) BARS='▮';; esac
   ES="$(html_escape "$SSID")"; EN="$(html_escape "$NOTE")"; ESG="$(html_escape "$SIGNAL")"; EQ="$(html_escape "$QUALITY")"

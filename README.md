@@ -54,7 +54,40 @@ ART 是本机无线校准数据，丢失后不能用别台机器的备份随便�
 
 ## 构建
 
-Ubuntu/Debian 建议先安装 OpenWrt 常用依赖：
+### Docker 编译（推荐）
+
+宿主机只需安装 Docker，不必手动装 OpenWrt 编译依赖。`.build/` 与 `.ccache/` 会保留在宿主机目录，**第二次起用 `quick` 会快很多**。
+
+```sh
+# 首次全量编译（约 30~60 分钟，视 CPU 而定）
+JOBS=8 ./build.sh docker build
+
+# 只改了 rootfs / wifi2eth / 网页 等，增量编译（约 5~15 分钟）
+JOBS=8 ./build.sh docker quick
+
+# 进入容器调试
+./build.sh docker shell
+```
+
+等价写法：
+
+```sh
+docker compose run --rm builder                    # 默认 quick
+docker compose run --rm builder ./scripts/openwrt-build.sh build
+```
+
+同步到远程编译（**不要** rsync `.build/`，各机器路径不同会污染缓存）：
+
+```sh
+./scripts/sync-remote.sh ubuntu@192.168.9.208
+ssh ubuntu@192.168.9.208 'cd ~/wr703n/wr703n-16m64m-wifi2eth && JOBS=12 ./build.sh docker build'
+```
+
+产物仍在 `out/`。
+
+### 原生编译
+
+Ubuntu/Debian 需先安装 OpenWrt 常用依赖：
 
 ```sh
 sudo apt update
@@ -62,17 +95,13 @@ sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib gette
   libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget
 ```
 
-仅准备源码、feeds、DTS 和 `.config`：
-
 ```sh
-./build.sh prepare
+./build.sh prepare    # 仅准备源码与 .config
+./build.sh build      # 全量编译
+./build.sh quick      # 增量编译（保留 .build/）
 ```
 
-完整构建：
-
-```sh
-./build.sh build
-```
+> **说明**：`build` 会重置 OpenWrt 源码树（`git clean -fdx`），每次都像首次编译一样慢；日常改 overlay 请用 `quick`。
 
 产物位于 `out/`：
 
