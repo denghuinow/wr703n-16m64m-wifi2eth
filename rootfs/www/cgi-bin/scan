@@ -1,0 +1,42 @@
+#!/bin/sh
+printf 'Content-Type: text/html; charset=UTF-8\r\nCache-Control: no-store\r\n\r\n'
+html_escape(){ printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
+
+command -v iwinfo >/dev/null 2>&1 || { printf '<div class="scan-msg scan-error">iwinfo 不可用。</div>\n'; exit 0; }
+IFACE="$(iwinfo 2>/dev/null | awk 'NF {print $1; exit}')"
+[ -n "$IFACE" ] || { printf '<div class="scan-msg scan-error">没有找到无线接口。</div>\n'; exit 0; }
+TMP="/tmp/wifi2eth-scan.$$"; trap 'rm -f "$TMP" "$TMP.rows"' EXIT INT TERM
+iwinfo "$IFACE" scan >"$TMP" 2>/dev/null || { printf '<div class="scan-msg scan-error">扫描失败，请稍后重试。</div>\n'; exit 0; }
+
+awk '
+function flush(){if(have&&ssid!=""){sep=sprintf("%c",31);print signal sep quality sep enc sep ssid}have=0;ssid="";signal=-999;quality="";enc="未知"}
+BEGIN{signal=-999;enc="未知"}
+/^Cell [0-9][0-9]* - Address:/{flush();have=1;next}
+/ESSID: /{s=$0;sub(/^.*ESSID: \"/,"",s);sub(/\"[[:space:]]*$/,"",s);ssid=s;next}
+/Signal: /{s=$0;sub(/^.*Signal:[[:space:]]*/,"",s);sub(/[[:space:]]*dBm.*$/,"",s);if(s~/^-?[0-9]+$/)signal=s;q=$0;sub(/^.*Quality:[[:space:]]*/,"",q);sub(/[[:space:]].*$/,"",q);if(q!=$0)quality=q;next}
+/Quality: /{q=$0;sub(/^.*Quality:[[:space:]]*/,"",q);sub(/[[:space:]].*$/,"",q);quality=q;next}
+/Encryption: /{e=$0;sub(/^.*Encryption:[[:space:]]*/,"",e);enc=e;next}
+END{flush()}' "$TMP" | sort -t "$(printf '\037')" -k1,1nr >"$TMP.rows"
+
+[ -s "$TMP.rows" ] || { printf '<div class="scan-msg">没有扫描到 Wi-Fi，可手工输入隐藏 SSID。</div>\n'; exit 0; }
+printf '<div class="wifi-list">\n'
+while IFS="$(printf '\037')" read -r SIGNAL QUALITY ENC SSID; do
+  [ -n "$SSID" ] || continue
+  COMPAT=1; CLASS='sec-ok'; NOTE="$ENC"; SECURITY='psk2'
+  case "$ENC" in
+    *WEP*) COMPAT=0; CLASS='sec-bad'; NOTE="$ENC · WEP 不支持" ;;
+    *WPA3*WPA2*|*WPA2*WPA3*|*SAE*WPA2*|*WPA2*SAE*) SECURITY='sae-mixed' ;;
+    *WPA3*|*SAE*) SECURITY='sae' ;;
+    *none*|*None*|*NONE*|*open*|*Open*) SECURITY='none'; CLASS='sec-open'; NOTE='开放网络' ;;
+    *WPA2*) SECURITY='psk2' ;;
+    *WPA*) COMPAT=0; CLASS='sec-bad'; NOTE="$ENC · 仅 WPA1 不支持" ;;
+  esac
+  case "$SIGNAL" in -[0-4][0-9]|-[0-5][0-9]) BARS='▮▮▮▮';; -6[0-7]) BARS='▮▮▮';; -6[8-9]|-7[0-5]) BARS='▮▮';; *) BARS='▮';; esac
+  ES="$(html_escape "$SSID")"; EN="$(html_escape "$NOTE")"; ESG="$(html_escape "$SIGNAL")"; EQ="$(html_escape "$QUALITY")"
+  if [ "$COMPAT" -eq 1 ]; then
+    printf '<button type="button" class="wifi-item" data-ssid="%s" data-security="%s"><span class="wifi-main"><b>%s</b><small class="%s">%s</small></span><span class="wifi-signal" title="%s dBm · %s">%s <small>%s dBm</small></span></button>\n' "$ES" "$SECURITY" "$ES" "$CLASS" "$EN" "$ESG" "$EQ" "$BARS" "$ESG"
+  else
+    printf '<div class="wifi-item wifi-disabled"><span class="wifi-main"><b>%s</b><small class="%s">%s</small></span><span class="wifi-signal">%s <small>%s dBm</small></span></div>\n' "$ES" "$CLASS" "$EN" "$BARS" "$ESG"
+  fi
+done <"$TMP.rows"
+printf '</div>\n'

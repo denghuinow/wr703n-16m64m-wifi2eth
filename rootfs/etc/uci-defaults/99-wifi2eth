@@ -1,0 +1,30 @@
+#!/bin/sh
+uci -q set system.@system[0].hostname='wr703n-wifi2eth'
+uci -q set wifi2eth.main='main'
+uci -q set wifi2eth.main.mode='setup'
+uci -q set wifi2eth.main.version='16m64m-v1.1'
+uci commit system
+uci commit wifi2eth
+
+# Default root password (empty OpenWrt root is otherwise reachable on the open Setup AP).
+# Change after first login: passwd
+if command -v chpasswd >/dev/null 2>&1; then
+  echo 'root:wr703n' | chpasswd
+else
+  printf '%s\n%s\n' 'wr703n' 'wr703n' | passwd root >/dev/null 2>&1 || true
+fi
+
+# Keep password auth, but root must have a non-empty password (set above).
+i=0
+while uci -q get dropbear.@dropbear[$i] >/dev/null 2>&1; do
+  uci set dropbear.@dropbear[$i].PasswordAuth='on'
+  uci set dropbear.@dropbear[$i].RootPasswordAuth='on'
+  i=$((i + 1))
+done
+uci commit dropbear 2>/dev/null || true
+
+# First boot: write setup-mode UCI config without restarting services while
+# uci-defaults are still running. Normal init will bring services up later.
+WIFI2ETH_NO_RESTART=1 /usr/bin/wifi2eth setup-mode >/tmp/wifi2eth-firstboot.log 2>&1 || true
+/etc/init.d/uhttpd enable 2>/dev/null || true
+exit 0

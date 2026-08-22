@@ -1,0 +1,29 @@
+#!/bin/sh
+header(){ printf 'Content-Type: text/html; charset=UTF-8\r\nCache-Control: no-store\r\n\r\n'; }
+page(){ header; printf '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%s</title><style>body{font-family:sans-serif;background:#f5f6f8}.c{max-width:460px;margin:8vh auto;background:white;padding:24px;border-radius:16px}p{line-height:1.6;color:#5f6368}a{color:#1a73e8}</style></head><body><div class="c"><h2>%s</h2><p>%s</p><p><a href="/">返回</a></p></div></body></html>' "$1" "$1" "$2"; }
+urldecode(){ awk 'function hv(c,p){c=toupper(c);p=index("0123456789ABCDEF",c);return p?p-1:-1}{s=$0;gsub(/\+/," ",s);out="";n=length(s);for(i=1;i<=n;i++){c=substr(s,i,1);if(c=="%"&&i+2<=n){a=hv(substr(s,i+1,1));b=hv(substr(s,i+2,1));if(a>=0&&b>=0){out=out sprintf("%c",a*16+b);i+=2;continue}}out=out c}printf "%s",out}'; }
+param(){ want="$1"; printf '%s' "$POST" | awk -v w="$want" 'BEGIN{RS="&";FS="="}$1==w{print substr($0,length($1)+2);exit}' | urldecode; }
+
+[ "${REQUEST_METHOD:-}" = POST ] || { page '配置页面' '请从首页提交配置。'; exit 0; }
+case "${CONTENT_LENGTH:-}" in ''|*[!0-9]*) page '请求无效' '请求长度无效。'; exit 0;; esac
+[ "$CONTENT_LENGTH" -le 768 ] || { page '请求过大' '配置内容过长。'; exit 0; }
+POST="$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)"
+SSID="$(param ssid)"; PASS="$(param password)"; MODE="$(param mode)"; SECURITY="$(param security)"
+[ -n "$SSID" ] || { page '配置失败' 'SSID 不能为空。'; exit 0; }
+[ ${#SSID} -le 32 ] || { page '配置失败' 'SSID 不能超过 32 字节。'; exit 0; }
+case "$MODE" in nat|relay) ;; *) MODE=nat;; esac
+case "$SECURITY" in none|psk2|sae|sae-mixed) ;; *) SECURITY=psk2;; esac
+case "$SECURITY" in
+  none) PASS='-' ;;
+  psk2|sae-mixed) [ ${#PASS} -ge 8 ] && [ ${#PASS} -le 63 ] || { page '配置失败' 'WPA2 密码必须为 8～63 个字符。'; exit 0; } ;;
+  sae) [ ${#PASS} -ge 1 ] && [ ${#PASS} -le 63 ] || { page '配置失败' 'WPA3-SAE 密码不能为空且不能超过 63 个字符。'; exit 0; } ;;
+esac
+
+header
+cat <<'HTML'
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>正在切换</title><style>body{font-family:sans-serif;background:#f5f6f8}.c{max-width:460px;margin:8vh auto;background:white;padding:24px;border-radius:16px}p{line-height:1.6;color:#5f6368}</style></head><body><div class="c"><h2>配置已保存</h2><p>设备正在从 <b>WR703N-Setup</b> 切换为 Wi-Fi 客户端，Setup 热点随后消失属于正常现象。</p><p><b>NAT：</b>有线设备设为 DHCP，会得到 192.168.77.x。<br><b>relay：</b>有线设备通常直接从上级路由器 DHCP 获取地址。</p><p>若无法联网，长按 Reset 5～14 秒重新进入配网模式。</p></div></body></html>
+HTML
+(
+  sleep 2
+  /usr/bin/wifi2eth setup "$SSID" "$PASS" "$MODE" "$SECURITY" >/tmp/wifi2eth-apply.log 2>&1
+) >/dev/null 2>&1 &

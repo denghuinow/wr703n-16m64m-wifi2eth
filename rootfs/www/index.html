@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WR703N Wi-Fi 转网线</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f6f8;margin:0;color:#202124}.card{max-width:480px;margin:4vh auto;background:#fff;padding:22px;border-radius:16px;box-shadow:0 4px 24px #0001}h1{font-size:22px;margin:0 0 8px}p{font-size:14px;line-height:1.55;color:#5f6368}label{display:block;margin:15px 0 6px;font-size:14px;font-weight:600}input,select,button{box-sizing:border-box;width:100%;font-size:16px;padding:12px;border:1px solid #d7dbe0;border-radius:10px;background:#fff}.primary{margin-top:20px;border:0;background:#1a73e8;color:#fff;font-weight:700}.scan-btn{margin:8px 0 2px;font-size:14px;padding:10px;color:#1a73e8;border-color:#c8d8f0;font-weight:600}.scan-btn:disabled{color:#888}.note{font-size:12px}.mode{margin-top:10px;padding:10px;background:#f7f9fc;border-radius:10px}.scan-box{margin-top:10px}.scan-msg{font-size:13px;color:#5f6368;padding:10px;background:#f7f9fc;border-radius:10px}.scan-error{color:#b3261e}.wifi-list{border:1px solid #e2e5e9;border-radius:10px;overflow:hidden;max-height:300px;overflow-y:auto}.wifi-item{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:0;border-bottom:1px solid #eceff1;border-radius:0;padding:11px 12px;text-align:left;background:#fff;color:#202124;cursor:pointer;-webkit-tap-highlight-color:rgba(26,115,232,.15)}.wifi-item *{pointer-events:none}.wifi-item:last-child{border-bottom:0}.wifi-item:hover,.wifi-item:active{background:#f6f9fe}.wifi-main{min-width:0;display:flex;flex-direction:column;gap:3px}.wifi-main b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wifi-main small,.wifi-signal small{font-size:11px;color:#6f7479}.wifi-signal{flex:0 0 auto;font-size:11px;letter-spacing:-1px;text-align:right}.wifi-disabled{opacity:.55;background:#fafafa;cursor:default}.sec-ok{color:#137333!important}.sec-open{color:#946200!important}.sec-bad{color:#b3261e!important}.picked{font-size:12px;color:#137333;margin-top:6px;min-height:18px}.warn{background:#fff7e0;padding:10px;border-radius:10px;color:#795500}@media(max-width:520px){.card{margin:0;min-height:100vh;border-radius:0;box-shadow:none}}
+</style></head><body><div class="card">
+<h1>WR703N-16M64M Wi-Fi → 网线</h1>
+<p>连接上级 2.4 GHz Wi-Fi，然后把网络输出到 RJ45。扫描结果可直接点选；隐藏 SSID 仍可手工输入。</p>
+<button id="scanButton" class="scan-btn" type="button">扫描附近 Wi-Fi</button>
+<div id="scanResult" class="scan-box"><div class="scan-msg">点击扫描，然后点选要连接的 SSID。</div></div>
+<form method="post" action="/cgi-bin/setup" accept-charset="UTF-8">
+<label for="ssid">Wi-Fi 名称（SSID）</label><input id="ssid" name="ssid" maxlength="32" required autocomplete="off" placeholder="可从上方扫描结果点选"><div id="picked" class="picked"></div>
+<label for="security">加密方式</label><select id="security" name="security"><option value="psk2" selected>WPA2-PSK</option><option value="sae-mixed">WPA2/WPA3 Mixed</option><option value="sae">WPA3-SAE</option><option value="none">开放网络</option></select>
+<label for="password">Wi-Fi 密码</label><input id="password" name="password" type="password" maxlength="63" autocomplete="current-password" placeholder="开放网络留空">
+<label for="mode">工作模式</label><select id="mode" name="mode"><option value="nat" selected>NAT（稳定优先，推荐默认）</option><option value="relay">relayd 伪桥（与上级同网段）</option></select>
+<div class="mode"><p class="note"><b>NAT：</b>有线设备获得 192.168.77.x，兼容性最好。<br><b>relay：</b>有线设备通常直接从上级 DHCP 获取地址，仅 IPv4，行为更接近无线网桥。</p></div>
+<div class="warn"><p class="note">当前 OpenWrt 25.12.5 有 relayd 长时间运行后停止转发的已知报告，因此默认选 NAT；确实需要同网段时再选 relay。</p></div>
+<button class="primary" type="submit">保存并连接</button></form>
+<p class="note">Setup 热点为开放网络，仅在首次启动或长按 Reset 5～14 秒后出现。短按 Reset &lt;1 秒重启；长按 ≥15 秒恢复出厂。</p>
+</div>
+<script>
+(function(){
+  var b=document.getElementById('scanButton');
+  var r=document.getElementById('scanResult');
+  var s=document.getElementById('ssid');
+  var sec=document.getElementById('security');
+  var picked=document.getElementById('picked');
+  var pw=document.getElementById('password');
+
+  function pick(el){
+    if(!el)return;
+    var ssid=el.getAttribute('data-ssid');
+    if(!ssid)return;
+    s.value=ssid;
+    var v=el.getAttribute('data-security');
+    if(v)sec.value=v;
+    picked.textContent='已选择：'+ssid;
+    if(v==='none'){pw.value='';pw.placeholder='开放网络无需密码';}
+    else{pw.placeholder='输入 Wi-Fi 密码';try{pw.focus();}catch(e){}}
+  }
+
+  function findItem(t){
+    while(t&&t!==r){
+      if(t.nodeType===1&&t.getAttribute&&t.getAttribute('data-ssid'))return t;
+      t=t.parentNode;
+    }
+    return null;
+  }
+
+  function scan(){
+    b.disabled=true;
+    b.textContent='正在扫描…';
+    r.innerHTML='<div class="scan-msg">扫描时 Setup 热点可能短暂卡顿。</div>';
+    var x=new XMLHttpRequest();
+    x.open('GET','/cgi-bin/scan?_='+(Date.now()),true);
+    x.onreadystatechange=function(){
+      if(x.readyState!==4)return;
+      b.disabled=false;
+      b.textContent='重新扫描附近 Wi-Fi';
+      r.innerHTML=(x.status>=200&&x.status<300)?x.responseText:'<div class="scan-msg scan-error">扫描失败，请重试或手工输入。</div>';
+    };
+    x.send(null);
+  }
+
+  b.addEventListener('click',scan);
+  r.addEventListener('click',function(e){pick(findItem(e.target));});
+})();
+</script></body></html>

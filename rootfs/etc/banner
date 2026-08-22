@@ -1,0 +1,5 @@
+  WR703N-16M64M WiFi -> Ethernet
+  OpenWrt 25.12.x / ath79
+  setup SSID: WR703N-Setup
+  management: 192.168.77.1
+  SSH: root / wr703n  (run: passwd)

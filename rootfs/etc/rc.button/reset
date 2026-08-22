@@ -1,0 +1,16 @@
+#!/bin/sh
+[ "$ACTION" = "released" ] || exit 0
+SECS="${SEEN:-0}"
+logger -t wifi2eth "reset released after ${SECS}s"
+
+if [ "$SECS" -ge 15 ]; then
+  logger -t wifi2eth "factory reset requested"
+  firstboot -y && reboot &
+elif [ "$SECS" -ge 5 ]; then
+  logger -t wifi2eth "entering setup mode"
+  /usr/bin/wifi2eth setup-mode >/tmp/wifi2eth-reset.log 2>&1 &
+elif [ "$SECS" -lt 1 ]; then
+  sync
+  reboot
+fi
+exit 0
