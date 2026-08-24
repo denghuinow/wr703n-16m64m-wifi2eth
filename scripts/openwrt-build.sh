@@ -4,13 +4,35 @@ set -euo pipefail
 
 OPENWRT_VERSION="25.12.5"
 TAG="v${OPENWRT_VERSION}"
-DEVICE="tplink_tl-wr703n-16m64m"
+DEVICE="${DEVICE:-wr703n-16m64m}"
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${HERE}/.build"
+WORK="${HERE}/.build/${DEVICE}"
 SRC="${WORK}/openwrt-${OPENWRT_VERSION}"
-OUT="${HERE}/out"
+OUT="${HERE}/out/${DEVICE}"
 JOBS="${JOBS:-2}"
 MODE="${1:-build}"
+
+case "$DEVICE" in
+  wr703n-16m64m)
+    CONFIG_SEED="${HERE}/configs/wr703n-16m64m.seed"
+    TARGET_CONFIG='CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-wr703n-16m64m=y'
+    TARGET_DIR='ath79/tiny'
+    IMAGE_GLOB='*wr703n-16m64m*squashfs*.bin'
+    ;;
+  k2-v22.4)
+    CONFIG_SEED="${HERE}/configs/k2-v22.4.seed"
+    TARGET_CONFIG='CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y'
+    TARGET_DIR='ramips/mt7620'
+    IMAGE_GLOB='*phicomm_k2-v22.4*squashfs*.bin'
+    ;;
+  k2-v22.5)
+    CONFIG_SEED="${HERE}/configs/k2-v22.5.seed"
+    TARGET_CONFIG='CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.5=y'
+    TARGET_DIR='ramips/mt7620'
+    IMAGE_GLOB='*phicomm_k2-v22.5*squashfs*.bin'
+    ;;
+  *) echo "未知设备: $DEVICE" >&2; exit 1 ;;
+esac
 
 export FORCE_UNSAFE_CONFIGURE=1
 
@@ -21,13 +43,13 @@ sync_overlay() {
   rm -rf "$SRC/files"
   mkdir -p "$SRC/files"
   rsync -a "${HERE}/rootfs/" "$SRC/files/"
-  cp "${HERE}/config.seed" "$SRC/.config"
+  cp "$CONFIG_SEED" "$SRC/.config"
   make -C "$SRC" defconfig
 }
 
 verify_target() {
-  if ! grep -q '^CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-wr703n-16m64m=y$' "$SRC/.config"; then
-    echo "自定义 target 未进入 .config，停止构建。" >&2
+  if ! grep -Fqx "$TARGET_CONFIG" "$SRC/.config"; then
+    echo "目标 $DEVICE 未进入 .config，停止构建。" >&2
     exit 2
   fi
 }
@@ -36,35 +58,34 @@ collect_images() {
   mkdir -p "$OUT"
   rm -f "$OUT"/*
   shopt -s nullglob
-  local images=( "$SRC"/bin/targets/ath79/tiny/*wr703n-16m64m*squashfs*.bin )
+  local images=( "$SRC"/bin/targets/$TARGET_DIR/$IMAGE_GLOB )
   if [ ${#images[@]} -eq 0 ]; then
-    echo "没有找到 WR703N-16M64M 输出镜像。" >&2
+    echo "没有找到 $DEVICE 输出镜像。" >&2
     exit 3
   fi
   cp -av "${images[@]}" "$OUT/"
 
-  local max=$((0xfd0000))
-  local f
-  for f in "$OUT"/*.bin; do
-    local sz
-    sz=$(stat -c %s "$f")
-    if [ "$sz" -gt "$max" ]; then
-      echo "镜像超过 0xfd0000 firmware 分区：$f ($sz bytes)" >&2
-      exit 4
-    fi
-  done
+  if [ "$DEVICE" = "wr703n-16m64m" ]; then
+    local max=$((0xfd0000)) f sz
+    for f in "$OUT"/*.bin; do
+      sz=$(stat -c %s "$f")
+      if [ "$sz" -gt "$max" ]; then
+        echo "镜像超过 WR703N 0xfd0000 firmware 分区：$f ($sz bytes)" >&2
+        exit 4
+      fi
+    done
+  fi
 
-  (
-    cd "$OUT"
-    sha256sum *.bin > SHA256SUMS
-  )
-
+  ( cd "$OUT" && sha256sum *.bin > SHA256SUMS )
   echo
-  echo "构建完成："
+  echo "构建完成：$DEVICE"
   ls -lh "$OUT"
-  echo
-  echo "Breed 首刷优先使用 *factory.bin；OpenWrt 后续升级使用 *sysupgrade.bin。"
-  echo "刷写前必须确认 ART 位于 0xff0000，详见 README.md。"
+  if [ "$DEVICE" = "wr703n-16m64m" ]; then
+    echo "Breed 首刷优先使用 *factory.bin；OpenWrt 后续升级使用 *sysupgrade.bin。"
+    echo "刷写前必须确认 ART 位于 0xff0000，详见 README.md。"
+  else
+    echo "K2 请严格按机身/原厂固件布局选择 v22.4 或 v22.5 镜像，不能混刷。"
+  fi
 }
 
 run_make() {
@@ -78,7 +99,6 @@ run_make() {
 prepare_tree() {
   local full="${1:-0}"
   mkdir -p "$WORK"
-
   if [ ! -d "$SRC/.git" ]; then
     git clone --depth 1 --branch "$TAG" https://github.com/openwrt/openwrt.git "$SRC"
   elif [ "$full" = "1" ]; then
@@ -88,7 +108,10 @@ prepare_tree() {
     git -C "$SRC" clean -fdx
   fi
 
-  "${HERE}/scripts/prepare-openwrt.py" "$SRC"
+  # Only the modified WR703N needs a local DTS/device profile patch.
+  if [ "$DEVICE" = "wr703n-16m64m" ]; then
+    "${HERE}/scripts/prepare-openwrt.py" "$SRC"
+  fi
 
   if [ "$full" = "1" ] || [ ! -d "$SRC/feeds" ] || [ "${FEEDS:-0}" = "1" ]; then
     "$SRC/scripts/feeds" update -a
@@ -99,41 +122,21 @@ prepare_tree() {
 case "$MODE" in
   clean)
     rm -rf "$WORK" "$OUT"
-    echo "已清理构建目录。"
+    echo "已清理 $DEVICE 构建目录。"
     ;;
-
   prepare)
-    prepare_tree 1
-    sync_overlay
-    verify_target
-    echo
+    prepare_tree 1; sync_overlay; verify_target
     echo "准备完成：$SRC"
-    echo "可检查配置后执行：./build.sh quick 或 ./build.sh build"
     ;;
-
   build)
-    prepare_tree 1
-    sync_overlay
-    verify_target
-    run_make
-    collect_images
+    prepare_tree 1; sync_overlay; verify_target; run_make; collect_images
     ;;
-
   quick)
-    [ -d "$SRC/.git" ] || { echo "尚未初始化源码树，请先执行 ./build.sh build 或 ./build.sh prepare" >&2; exit 1; }
-    prepare_tree 0
-    sync_overlay
-    verify_target
-    run_make
-    collect_images
+    [ -d "$SRC/.git" ] || { echo "尚未初始化 $DEVICE 源码树，请先执行 DEVICE=$DEVICE ./build.sh build 或 prepare" >&2; exit 1; }
+    prepare_tree 0; sync_overlay; verify_target; run_make; collect_images
     ;;
-
   *)
-    echo "用法: $0 {build|quick|prepare|clean}" >&2
-    echo "  build   全量重编（重置 OpenWrt 源码树，首次或换版本时用）" >&2
-    echo "  quick   增量编译（保留 .build 缓存，改 rootfs/脚本时用）" >&2
-    echo "  prepare 只准备源码与 .config，不编译" >&2
-    echo "  clean   删除 .build/ 与 out/" >&2
+    echo "用法: DEVICE=<设备> $0 {build|quick|prepare|clean}" >&2
     exit 1
     ;;
 esac
