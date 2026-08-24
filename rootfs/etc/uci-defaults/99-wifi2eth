@@ -1,15 +1,6 @@
 #!/bin/sh
-BOARD_NAME="$(ubus call system board 2>/dev/null | jsonfilter -e '@.board_name' 2>/dev/null || true)"
-case "$BOARD_NAME" in
-  phicomm,k2-v22.4|phicomm,k2-v22.5)
-    HOSTNAME='k2-wifi2eth'
-    DEFAULT_PASSWORD='phicomm-k2'
-    ;;
-  *)
-    HOSTNAME='wr703n-wifi2eth'
-    DEFAULT_PASSWORD='wr703n'
-    ;;
-esac
+HOSTNAME='wifi2eth'
+DEFAULT_PASSWORD='wifi2eth'
 
 uci -q set system.@system[0].hostname="$HOSTNAME"
 uci -q set wifi2eth.main='main'

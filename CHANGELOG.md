@@ -1,6 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- 多机型统一品牌：Setup SSID `WiFi2Eth-Setup`、SSH 密码 `wifi2eth`、主机名 `wifi2eth`、配网 UI 文案统一为 WiFi2Eth。
+- 文档改为多硬件说明，并增加硬件支持列表（WR703N-16M64M、Phicomm K2）。
+- K2：双频扫描与按频段选择 STA radio。
+
 ## [1.1.1] - 2026-08-23
+
 
 ### Bug Fixes
 - Setup 模式：`network restart` 后重新加载无线，使 AP 重新加入 `br-lan`，修复连 `WR703N-Setup` 拿不到 IP（有线正常）的问题。

@@ -19,14 +19,8 @@ case "$DEVICE" in
     TARGET_DIR='ath79/tiny'
     IMAGE_GLOB='*wr703n-16m64m*squashfs*.bin'
     ;;
-  k2-v22.4)
-    CONFIG_SEED="${HERE}/configs/k2-v22.4.seed"
-    TARGET_CONFIG='CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y'
-    TARGET_DIR='ramips/mt7620'
-    IMAGE_GLOB='*phicomm_k2-v22.4*squashfs*.bin'
-    ;;
-  k2-v22.5)
-    CONFIG_SEED="${HERE}/configs/k2-v22.5.seed"
+  k2)
+    CONFIG_SEED="${HERE}/configs/k2.seed"
     TARGET_CONFIG='CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.5=y'
     TARGET_DIR='ramips/mt7620'
     IMAGE_GLOB='*phicomm_k2-v22.5*squashfs*.bin'
@@ -84,7 +78,7 @@ collect_images() {
     echo "Breed 首刷优先使用 *factory.bin；OpenWrt 后续升级使用 *sysupgrade.bin。"
     echo "刷写前必须确认 ART 位于 0xff0000，详见 README.md。"
   else
-    echo "K2 请严格按机身/原厂固件布局选择 v22.4 或 v22.5 镜像，不能混刷。"
+    echo "K2 请确认机身/原厂为 v22.5 布局后再刷；产物在 out/k2/。"
   fi
 }
 

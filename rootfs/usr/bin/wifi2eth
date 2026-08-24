@@ -1,18 +1,15 @@
 #!/bin/sh
 
 MANAGEMENT_IP="192.168.77.1"
+SETUP_SSID="WiFi2Eth-Setup"
 BOARD_NAME="$(ubus call system board 2>/dev/null | jsonfilter -e '@.board_name' 2>/dev/null || true)"
-case "$BOARD_NAME" in
-  phicomm,k2-v22.4|phicomm,k2-v22.5) SETUP_SSID="Phicomm-K2-Setup" ;;
-  *) SETUP_SSID="WR703N-Setup" ;;
-esac
 
 usage() {
 cat <<USAGE
 WiFi -> Ethernet ($BOARD_NAME)
 
 Usage:
-  wifi2eth setup <SSID> <PASSWORD|-> [nat|relay] [none|psk2|sae|sae-mixed]
+  wifi2eth setup <SSID> <PASSWORD|-> [nat|relay] [none|psk2|sae|sae-mixed] [2g|5g]
   wifi2eth setup-mode
   wifi2eth status
 
@@ -22,8 +19,49 @@ Modes:
 USAGE
 }
 
+list_radios() {
+  uci show wireless 2>/dev/null | sed -n "s/^wireless\.\([^=]*\)=wifi-device$/\1/p"
+}
+
 first_radio() {
-  uci show wireless 2>/dev/null | sed -n "s/^wireless\.\([^=]*\)=wifi-device$/\1/p" | head -n1
+  list_radios | head -n1
+}
+
+radio_band() {
+  radio="$1"
+  band="$(uci -q get wireless."$radio".band 2>/dev/null || true)"
+  case "$band" in
+    5g|5G) echo 5g; return 0 ;;
+    2g|2G) echo 2g; return 0 ;;
+  esac
+  hwmode="$(uci -q get wireless."$radio".hwmode 2>/dev/null || true)"
+  case "$hwmode" in
+    *a*|*ac*|*ax*) echo 5g; return 0 ;;
+  esac
+  path="$(uci -q get wireless."$radio".path 2>/dev/null || true)"
+  case "$path" in
+    *pcie*|*pci*) echo 5g; return 0 ;;
+  esac
+  echo 2g
+}
+
+radio_for_band() {
+  want="${1:-2g}"
+  for radio in $(list_radios); do
+    [ "$(radio_band "$radio")" = "$want" ] && { echo "$radio"; return 0; }
+  done
+  # Fallback: first radio for 2g, last for 5g on dual-band boards.
+  if [ "$want" = 5g ]; then
+    list_radios | tail -n1
+  else
+    first_radio
+  fi
+}
+
+enable_all_radios() {
+  for radio in $(list_radios); do
+    uci -q set wireless."$radio".disabled='0'
+  done
 }
 
 lan_ports() {
@@ -86,9 +124,13 @@ base_network() {
 }
 
 configure_sta() {
-  ssid="$1"; pass="$2"; security="$3"; radio="$(first_radio)"
+  ssid="$1"; pass="$2"; security="$3"; band="${4:-2g}"
+  case "$band" in 5g|5G) band=5g ;; *) band=2g ;; esac
+  radio="$(radio_for_band "$band")"
   [ -n "$radio" ] || { echo "No wifi-device found" >&2; return 2; }
-  remove_all_wifi_ifaces; uci -q set wireless."$radio".disabled='0'
+  remove_all_wifi_ifaces
+  enable_all_radios
+  # Keep non-STA radios up for later scans, but only one STA iface.
   iface="$(uci add wireless wifi-iface)"
   uci set wireless."$iface".device="$radio"; uci set wireless."$iface".mode='sta'; uci set wireless."$iface".network='wwan'
   uci set wireless."$iface".ssid="$ssid"; uci set wireless."$iface".encryption="$security"
@@ -101,8 +143,10 @@ configure_sta() {
 }
 
 configure_setup_ap() {
-  radio="$(first_radio)"; [ -n "$radio" ] || { echo "No wifi-device found" >&2; return 2; }
-  remove_all_wifi_ifaces; uci -q set wireless."$radio".disabled='0'
+  # Setup hotspot on 2.4 GHz for phone compatibility; enable all radios so 5 GHz can be scanned.
+  radio="$(radio_for_band 2g)"; [ -n "$radio" ] || { echo "No wifi-device found" >&2; return 2; }
+  remove_all_wifi_ifaces
+  enable_all_radios
   iface="$(uci add wireless wifi-iface)"
   uci set wireless."$iface".device="$radio"; uci set wireless."$iface".mode='ap'; uci set wireless."$iface".network='lan'
   uci set wireless."$iface".ssid="$SETUP_SSID"; uci set wireless."$iface".encryption='none'
@@ -138,16 +182,17 @@ validate_security() { pass="$1"; sec="$2"; case "$sec" in none) return 0;; psk2|
 
 case "${1:-}" in
   setup)
-    [ $# -ge 3 ] || { usage; exit 1; }; SSID="$2"; PASS="$3"; MODE="${4:-nat}"; SECURITY="${5:-psk2}"
+    [ $# -ge 3 ] || { usage; exit 1; }; SSID="$2"; PASS="$3"; MODE="${4:-nat}"; SECURITY="${5:-psk2}"; BAND="${6:-2g}"
     [ -n "$SSID" ] && [ ${#SSID} -le 32 ] || { echo "Invalid SSID" >&2; exit 1; }
     case "$MODE" in nat|relay) ;; *) echo "Mode must be nat or relay" >&2; exit 1;; esac
+    case "$BAND" in 5g|5G) BAND=5g ;; *) BAND=2g ;; esac
     [ "$PASS" = "-" ] && { PASS=""; SECURITY="none"; }
     validate_security "$PASS" "$SECURITY" || { echo "Invalid password/security combination" >&2; exit 1; }
-    base_network; configure_sta "$SSID" "$PASS" "$SECURITY"; [ "$MODE" = relay ] && setup_relay || setup_nat
-    uci -q set wifi2eth.main='main'; uci set wifi2eth.main.mode="$MODE"; uci set wifi2eth.main.ssid="$SSID"; uci set wifi2eth.main.security="$SECURITY"
-    commit_all; /etc/init.d/uhttpd enable 2>/dev/null || true; restart_all; echo "Configured: board=$BOARD_NAME mode=$MODE security=$SECURITY ssid=$SSID"
+    base_network; configure_sta "$SSID" "$PASS" "$SECURITY" "$BAND"; [ "$MODE" = relay ] && setup_relay || setup_nat
+    uci -q set wifi2eth.main='main'; uci set wifi2eth.main.mode="$MODE"; uci set wifi2eth.main.ssid="$SSID"; uci set wifi2eth.main.security="$SECURITY"; uci set wifi2eth.main.band="$BAND"
+    commit_all; /etc/init.d/uhttpd enable 2>/dev/null || true; restart_all; echo "Configured: board=$BOARD_NAME mode=$MODE band=$BAND security=$SECURITY ssid=$SSID"
     ;;
   setup-mode) setup_portal; commit_all; /etc/init.d/uhttpd enable 2>/dev/null || true; restart_all; echo "Setup mode enabled: $SETUP_SSID / http://$MANAGEMENT_IP/" ;;
-  status) echo "board=$BOARD_NAME"; echo "mode=$(uci -q get wifi2eth.main.mode || echo unknown)"; echo "ssid=$(uci -q get wifi2eth.main.ssid || true)"; echo "security=$(uci -q get wifi2eth.main.security || true)"; echo "--- wwan ---"; ifstatus wwan 2>/dev/null || true; echo "--- wireless ---"; iwinfo 2>/dev/null || true ;;
+  status) echo "board=$BOARD_NAME"; echo "mode=$(uci -q get wifi2eth.main.mode || echo unknown)"; echo "ssid=$(uci -q get wifi2eth.main.ssid || true)"; echo "security=$(uci -q get wifi2eth.main.security || true)"; echo "band=$(uci -q get wifi2eth.main.band || true)"; echo "--- wwan ---"; ifstatus wwan 2>/dev/null || true; echo "--- wireless ---"; iwinfo 2>/dev/null || true ;;
   *) usage; exit 1 ;;
 esac

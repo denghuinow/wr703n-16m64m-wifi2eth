@@ -1,4 +1,4 @@
-# OpenWrt 25.12.5 builder for WR703N-16M64M WiFi2Eth
+# OpenWrt 25.12.5 builder for WiFi2Eth (multi-device)
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \

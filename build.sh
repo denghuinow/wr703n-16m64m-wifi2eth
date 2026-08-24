@@ -11,19 +11,19 @@ WiFi2Eth 多设备构建入口
 
 支持设备（DEVICE=...）:
   wr703n-16m64m   TP-Link WR703N 16M Flash / 64M RAM（默认）
-  k2-v22.4        Phicomm K2，固件布局 v22.4 或更早
-  k2-v22.5        Phicomm K2，固件布局 v22.5 或更新
+  k2              斐讯 Phicomm K2（OpenWrt v22.5 布局）
+
+各机型共用 Setup 热点 WiFi2Eth-Setup、密码 wifi2eth、同一套配网 UI。
 
 用法:
   DEVICE=wr703n-16m64m ./build.sh docker [build|quick|prepare|clean|shell|image]
-  DEVICE=k2-v22.5      ./build.sh docker [build|quick|prepare|clean|shell|image]
-  DEVICE=k2-v22.4      ./build.sh docker [build|quick|prepare|clean|shell|image]
+  DEVICE=k2            ./build.sh docker [build|quick|prepare|clean|shell|image]
 
   DEVICE=<设备> ./build.sh [build|quick|prepare|clean]
 
 推荐（Docker，无需在宿主机装编译依赖）:
-  DEVICE=k2-v22.5 ./build.sh docker build
-  DEVICE=k2-v22.5 ./build.sh docker quick
+  DEVICE=k2 ./build.sh docker build
+  DEVICE=k2 ./build.sh docker quick
 
 环境变量:
   DEVICE=设备         目标设备，默认 wr703n-16m64m
@@ -34,7 +34,7 @@ EOF
 }
 
 case "$DEVICE" in
-  wr703n-16m64m|k2-v22.4|k2-v22.5) ;;
+  wr703n-16m64m|k2) ;;
   *) echo "未知设备: $DEVICE" >&2; usage >&2; exit 1 ;;
 esac
 
