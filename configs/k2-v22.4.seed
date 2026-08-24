@@ -1,0 +1,11 @@
+CONFIG_TARGET_ramips=y
+CONFIG_TARGET_ramips_mt7620=y
+CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2-v22.4=y
+CONFIG_PACKAGE_relayd=y
+CONFIG_PACKAGE_uhttpd=y
+CONFIG_PACKAGE_libiwinfo=y
+CONFIG_PACKAGE_iwinfo=y
+CONFIG_PACKAGE_wpad-basic-mbedtls=y
+CONFIG_PACKAGE_dnsmasq=y
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_dropbear=y
