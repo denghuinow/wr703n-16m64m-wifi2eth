@@ -1,0 +1,12 @@
+CONFIG_TARGET_ath79=y
+CONFIG_TARGET_ath79_tiny=y
+CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-wr703n-16m64m=y
+CONFIG_PACKAGE_relayd=y
+CONFIG_PACKAGE_uhttpd=y
+CONFIG_PACKAGE_libiwinfo=y
+CONFIG_PACKAGE_iwinfo=y
+CONFIG_PACKAGE_wpad-basic-mbedtls=y
+CONFIG_PACKAGE_kmod-ath9k=y
+CONFIG_PACKAGE_dnsmasq=y
+CONFIG_PACKAGE_firewall4=y
+CONFIG_PACKAGE_dropbear=y
