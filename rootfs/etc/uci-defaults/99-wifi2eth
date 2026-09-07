@@ -3,6 +3,7 @@ HOSTNAME='wifi2eth'
 DEFAULT_PASSWORD='wifi2eth'
 
 uci -q set system.@system[0].hostname="$HOSTNAME"
+touch /etc/config/wifi2eth
 uci -q set wifi2eth.main='main'
 uci -q set wifi2eth.main.mode='setup'
 uci -q set wifi2eth.main.version='v1.2.0'
