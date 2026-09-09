@@ -3,28 +3,79 @@ printf 'Content-Type: text/html; charset=UTF-8\r\nCache-Control: no-store\r\n\r\
 html_escape(){ printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
 
 command -v iwinfo >/dev/null 2>&1 || { printf '<div class="scan-msg scan-error">iwinfo 不可用。</div>\n'; exit 0; }
-IFACE="$(iwinfo 2>/dev/null | awk 'NF {print $1; exit}')"
-[ -n "$IFACE" ] || { printf '<div class="scan-msg scan-error">没有找到无线接口。</div>\n'; exit 0; }
-TMP="/tmp/wifi2eth-scan.$$"; trap 'rm -f "$TMP" "$TMP.rows"' EXIT INT TERM
-iwinfo "$IFACE" scan >"$TMP" 2>/dev/null || { printf '<div class="scan-msg scan-error">扫描失败，请稍后重试。</div>\n'; exit 0; }
+
+# Bring every radio up so dual-band boards (e.g. Phicomm K2) can scan 5 GHz too.
+# Setup AP stays on 2.4 GHz; enabling radio1 alone does not create a second AP.
+changed=0
+for radio in $(uci show wireless 2>/dev/null | sed -n "s/^wireless\.\([^=]*\)=wifi-device$/\1/p"); do
+  if [ "$(uci -q get wireless."$radio".disabled)" = "1" ]; then
+    uci -q set wireless."$radio".disabled='0'
+    changed=1
+  fi
+done
+if [ "$changed" = "1" ]; then
+  uci commit wireless
+  ubus call network.wireless reconf >/dev/null 2>&1 || wifi reconf >/dev/null 2>&1 || true
+  sleep 2
+fi
+
+IFACES="$(iwinfo 2>/dev/null | awk 'NF {print $1}')"
+[ -n "$IFACES" ] || { printf '<div class="scan-msg scan-error">没有找到无线接口。</div>\n'; exit 0; }
+
+TMP="/tmp/wifi2eth-scan.$$"
+trap 'rm -f "$TMP" "$TMP.raw" "$TMP.rows"' EXIT INT TERM
+: >"$TMP.raw"
+for IFACE in $IFACES; do
+  iwinfo "$IFACE" scan >>"$TMP.raw" 2>/dev/null || true
+done
+[ -s "$TMP.raw" ] || { printf '<div class="scan-msg scan-error">扫描失败，请稍后重试。</div>\n'; exit 0; }
 
 awk '
-function flush(){if(have&&ssid!=""){sep=sprintf("%c",31);print signal sep quality sep enc sep ssid}have=0;ssid="";signal=-999;quality="";enc="未知"}
-BEGIN{signal=-999;enc="未知"}
+function flush(){
+  if(have && ssid!=""){
+    band="2g"
+    if(channel+0 >= 36) band="5g"
+    else if(freq ~ /^5\./) band="5g"
+    sep=sprintf("%c",31)
+    print signal sep quality sep enc sep band sep channel sep ssid
+  }
+  have=0; ssid=""; signal=-999; quality=""; enc="未知"; channel=0; freq=""
+}
+BEGIN{signal=-999;enc="未知";channel=0}
 /^Cell [0-9][0-9]* - Address:/{flush();have=1;next}
-/ESSID: /{s=$0;sub(/^.*ESSID: \"/,"",s);sub(/\"[[:space:]]*$/,"",s);ssid=s;next}
-/Signal: /{s=$0;sub(/^.*Signal:[[:space:]]*/,"",s);sub(/[[:space:]]*dBm.*$/,"",s);if(s~/^-?[0-9]+$/)signal=s;q=$0;sub(/^.*Quality:[[:space:]]*/,"",q);sub(/[[:space:]].*$/,"",q);if(q!=$0)quality=q;next}
-/Quality: /{q=$0;sub(/^.*Quality:[[:space:]]*/,"",q);sub(/[[:space:]].*$/,"",q);quality=q;next}
-/Encryption: /{e=$0;sub(/^.*Encryption:[[:space:]]*/,"",e);enc=e;next}
-END{flush()}' "$TMP" | sort -t "$(printf '\037')" -k1,1nr >"$TMP.rows"
+/ESSID: /{
+  s=$0; sub(/^.*ESSID: \"/,"",s); sub(/\"[[:space:]]*$/,"",s); ssid=s; next
+}
+/Signal: /{
+  s=$0; sub(/^.*Signal:[[:space:]]*/,"",s); sub(/[[:space:]]*dBm.*$/,"",s)
+  if(s~/^-?[0-9]+$/) signal=s
+  q=$0; sub(/^.*Quality:[[:space:]]*/,"",q); sub(/[[:space:]].*$/,"",q)
+  if(q!=$0) quality=q
+  next
+}
+/Quality: /{
+  q=$0; sub(/^.*Quality:[[:space:]]*/,"",q); sub(/[[:space:]].*$/,"",q); quality=q; next
+}
+/Encryption: /{
+  e=$0; sub(/^.*Encryption:[[:space:]]*/,"",e); enc=e; next
+}
+/Channel: /{
+  c=$0; sub(/^.*Channel:[[:space:]]*/,"",c); sub(/[^0-9].*$/,"",c)
+  if(c~/^[0-9]+$/) channel=c
+  f=$0
+  if(index(f,"GHz")){
+    sub(/^.*\(/,"",f); sub(/[[:space:]]*GHz.*$/,"",f)
+    if(f~/^[0-9]+\.[0-9]+$/) freq=f
+  }
+  next
+}
+END{flush()}' "$TMP.raw" | sort -t "$(printf '\037')" -k1,1nr >"$TMP.rows"
 
 [ -s "$TMP.rows" ] || { printf '<div class="scan-msg">没有扫描到 Wi-Fi，可手工输入隐藏 SSID。</div>\n'; exit 0; }
 printf '<div class="wifi-list">\n'
-while IFS="$(printf '\037')" read -r SIGNAL QUALITY ENC SSID; do
+while IFS="$(printf '\037')" read -r SIGNAL QUALITY ENC BAND CHANNEL SSID; do
   [ -n "$SSID" ] || continue
   COMPAT=1; CLASS='sec-ok'; NOTE="$ENC"; SECURITY='psk2'
-  # iwinfo often prints "WPA PSK (CCMP)" for WPA2 (no literal "WPA2").
-  # Only reject clear WEP / TKIP-only WPA1.
   case "$ENC" in
     *WEP*) COMPAT=0; CLASS='sec-bad'; NOTE="$ENC · WEP 不支持" ;;
     *WPA3*WPA2*|*WPA2*WPA3*|*SAE*WPA2*|*WPA2*SAE*) SECURITY='sae-mixed' ;;
@@ -35,12 +86,19 @@ while IFS="$(printf '\037')" read -r SIGNAL QUALITY ENC SSID; do
     *WPA*TKIP*) COMPAT=0; CLASS='sec-bad'; NOTE="$ENC · 仅 WPA1/TKIP 不支持" ;;
     *WPA*) SECURITY='psk2' ;;
   esac
+  case "$BAND" in
+    5g) BAND_LABEL='5 GHz' ;;
+    *) BAND='2g'; BAND_LABEL='2.4 GHz' ;;
+  esac
+  NOTE="$BAND_LABEL · $NOTE"
   case "$SIGNAL" in -[0-4][0-9]|-[0-5][0-9]) BARS='▮▮▮▮';; -6[0-7]) BARS='▮▮▮';; -6[8-9]|-7[0-5]) BARS='▮▮';; *) BARS='▮';; esac
   ES="$(html_escape "$SSID")"; EN="$(html_escape "$NOTE")"; ESG="$(html_escape "$SIGNAL")"; EQ="$(html_escape "$QUALITY")"
   if [ "$COMPAT" -eq 1 ]; then
-    printf '<button type="button" class="wifi-item" data-ssid="%s" data-security="%s"><span class="wifi-main"><b>%s</b><small class="%s">%s</small></span><span class="wifi-signal" title="%s dBm · %s">%s <small>%s dBm</small></span></button>\n' "$ES" "$SECURITY" "$ES" "$CLASS" "$EN" "$ESG" "$EQ" "$BARS" "$ESG"
+    printf '<button type="button" class="wifi-item" data-ssid="%s" data-security="%s" data-band="%s"><span class="wifi-main"><b>%s</b><small class="%s">%s</small></span><span class="wifi-signal" title="%s dBm · %s">%s <small>%s dBm</small></span></button>\n' \
+      "$ES" "$SECURITY" "$BAND" "$ES" "$CLASS" "$EN" "$ESG" "$EQ" "$BARS" "$ESG"
   else
-    printf '<div class="wifi-item wifi-disabled"><span class="wifi-main"><b>%s</b><small class="%s">%s</small></span><span class="wifi-signal">%s <small>%s dBm</small></span></div>\n' "$ES" "$CLASS" "$EN" "$BARS" "$ESG"
+    printf '<div class="wifi-item wifi-disabled"><span class="wifi-main"><b>%s</b><small class="%s">%s</small></span><span class="wifi-signal">%s <small>%s dBm</small></span></div>\n' \
+      "$ES" "$CLASS" "$EN" "$BARS" "$ESG"
   fi
 done <"$TMP.rows"
 printf '</div>\n'

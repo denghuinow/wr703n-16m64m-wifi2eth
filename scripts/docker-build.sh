@@ -2,8 +2,9 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE="${IMAGE:-wr703n-wifi2eth-builder:latest}"
+IMAGE="${IMAGE:-wifi2eth-builder:latest}"
 MODE="${1:-quick}"
+DEVICE="${DEVICE:-wr703n-16m64m}"
 shift || true
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "缺少命令: $1" >&2; exit 1; }; }
@@ -15,6 +16,7 @@ if [ "$MODE" = "shell" ]; then
     --user "$(id -u):$(id -g)" \
     -v "$HERE:/work" \
     -w /work \
+    -e DEVICE="$DEVICE" \
     -e JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}" \
     -e FORCE_UNSAFE_CONFIGURE=1 \
     -e CCACHE_DIR="${CCACHE_DIR:-/work/.ccache}" \
@@ -36,8 +38,6 @@ if [ -t 0 ]; then
 fi
 
 mkdir -p "${CCACHE_DIR:-$HERE/.ccache}"
-
-# Run as the invoking user so .build/ on the bind mount stays owned consistently.
 DOCKER_USER=( --user "$(id -u):$(id -g)" )
 
 docker run --rm "${TTY[@]}" \
@@ -45,6 +45,7 @@ docker run --rm "${TTY[@]}" \
   -v "$HERE:/work" \
   -v "${CCACHE_DIR:-$HERE/.ccache}:/work/.ccache" \
   -w /work \
+  -e DEVICE="$DEVICE" \
   -e JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}" \
   -e FORCE_UNSAFE_CONFIGURE=1 \
   -e CCACHE_DIR=/work/.ccache \
